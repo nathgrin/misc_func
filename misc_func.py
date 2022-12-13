@@ -36,6 +36,88 @@ def merge_pdfs(filenames,outfilename,delete=False):
 	
 	return
 
+
+def bin_adaptive( tobinlist, numberbins,startvalue=False ):
+	'''
+	bin tobinlist adaptively, preserving area under bars
+	
+	
+	
+	startvalue is the (lower bound) value of the first bin, 
+	if not given, it will take the lowest value in tobinlist
+	'''
+	from math import ceil
+	
+	tobinlist = sorted(tobinlist)
+	numberstars = float(len(tobinlist))/float(numberbins) # *Average* number of stars i neach bin
+	
+	# Decide which entries in tobinlist are at the boundary
+	intbins = [ [0,int(ceil(numberstars)-1)] ]
+	for i in range(1,numberbins): intbins.append( [intbins[-1][1],int(ceil((i+1)*numberstars)-1)] ) 
+	
+	bins = [ 0. for i in range(len(intbins)) ] # Output bins
+	binedges = [] # Edges of the bins
+	
+	for i in range(len(intbins)): # no need to iterate over values, just use index
+		binedges.append(tobinlist[intbins[i][0]])
+		for j in range(intbins[i][0],intbins[i][1]+1):
+			if   j == intbins[i][0]: # Lower edge of the bin
+				bins[i] = bins[i] + float(j) + 1. - float(i)*numberstars # Add fraction to bin
+			elif j == intbins[i][1]: # Upper edge of the bin
+				bins[i] = bins[i] + (float(i)+1.)*numberstars - float(j) # Add fraction to bin
+			else: # in the middle: just add 1
+				bins[i] = bins[i]+1.
+	
+	if type(startvalue) == float: # Decide on first bin
+		binedges[0] = startvalue 
+	
+	binedges.append( tobinlist[-1] ) # append last value in list to bin_edges, for convenient density calc
+	# Prepare density bins
+	densitybins = bins
+	binwidths = []
+	for i in range(len(bins)):
+		binwidths.append( binedges[i+1]-binedges[i] )
+		densitybins[i] = bins[i]/binwidths[-1]
+		
+	del binedges[-1] # Delete last binedge
+	
+	
+	return densitybins,binedges,binwidths
+
+def apply_freedman_diaconis(data_list, data_range=False):
+	''' Freedman-Diaconis rule for #bins for given data set
+	if data_range==[min,max], only apply to values in that range, inclusive boundaries'''
+	from numpy import percentile,unique
+	if type(data_range) == list:
+		if len(data_range) != 2:
+			raise ValueError("Freedman-Diaconis: data_range has to be list=[min,max] value, or False")
+		from numpy import where,array,logical_and
+		if data_range[0]>data_range[1]:
+			data_range = data_range[::-1]
+		data_list = array(data_list)
+		data_list = data_list[where(logical_and(data_list>=data_range[0],data_list<=data_range[1]))]
+		
+	data_list = data_list[~np.isnan(data_list)]
+	
+	if len(unique(data_list)) == 1:
+		print( "!!! Warning Freedman-Diaconis: you provided a list of identical values, are you sure this is right?" )
+		return 1
+	elif len(data_list) > 2:
+		q75, q25 = percentile(data_list, [75 ,25])
+		IQR = q75 - q25 # InterQuartileRange
+		if IQR == 0:
+			print( "!!! Warning Freedman-Diaconis: found an IQR of 0.. what happened?" )
+			return 1
+		
+		bininfo = int( (max(data_list)-min(data_list))/(2.*IQR*float(len(data_list))**(-1./3.)) )
+		#~ print "No bininfo, applying Freedman-Diaconis rule for # of bins:",bininfo
+	else:
+		print( "!!! Warning Freedman-Diaconis: len(data_list)<3, are you sure you gave the right data/range?" )
+		return 1
+		
+	#~ raw_input()
+	return bininfo
+
 def get_log_minorticks(norm_instance):
 	'''
 	Generate ticks in linspace ranging over orders of magnitude
